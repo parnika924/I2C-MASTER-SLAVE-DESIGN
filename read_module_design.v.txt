@@ -1,0 +1,104 @@
+// (Read)
+// module design
+module i2c_mr(
+    i/p clk, rst_n, start,
+    i/p [6:0] add,
+    inout sda,
+    o/p reg scl,
+    o/p reg busy,
+    o/p reg [7:0] data_out
+);
+
+reg [3:0] state;
+reg [3:0] bit_cnt;
+reg sda_out, sda_oe;
+
+assign sda = sda_oe ? sda_out : 1'bz;
+
+localparam IDLE = 0,
+           START = 1,
+           ADDR = 2,
+           ACK1 = 3,
+           READ = 4,
+           NACK = 5,
+           STOP = 6;
+
+always @(posedge clk or negedge rst_n)
+begin
+    if (!rst_n)
+    begin
+        state <= IDLE;
+        scl <= 1'b1;
+        sda_out <= 1'b1;
+        sda_oe <= 1'b1;
+        busy <= 1'b0;
+        bit_cnt <= 0;
+        data_out <= 8'h00;
+    end
+    else begin
+        case (state)
+            IDLE: begin
+                busy <= 1'b1;
+                state <= START;
+            end
+            
+            START: begin
+                begin
+                    sda_out <= 1'b0; // start condition
+                    state <= ADDR;
+                    bit_cnt <= 7;
+                end
+            end
+
+            ADDR: begin
+                scl <= 1'b0;
+                sda_out <= add[bit_cnt];
+                scl <= 1'b1;
+                if (bit_cnt == 0)
+                begin
+                    state <= ACK1;
+                    sda_out <= 1'b1; // read bit = 1
+                end
+                else begin
+                    bit_cnt <= bit_cnt - 1;
+                end
+            end
+
+            ACK1: begin
+                scl <= 1'b0;
+                sda_oe <= 1'b0; // release SDA for ACK
+                scl <= 1'b1;
+                state <= READ;
+                bit_cnt <= 7;
+            end
+
+            READ: begin
+                scl <= 1'b0;
+                sda_oe <= 1'b0; // slave drives SDA
+                scl <= 1'b1;
+                data_out[bit_cnt] <= sda;
+                if (bit_cnt == 0)
+                    state <= NACK;
+                else
+                    bit_cnt <= bit_cnt - 1;
+            end
+
+            NACK: begin
+                scl <= 1'b0;
+                sda_oe <= 1'b1;
+                sda_out <= 1'b1; // master sends NACK
+                scl <= 1'b1;
+                state <= STOP;
+            end
+
+            STOP: begin
+                scl <= 1'b1;
+                sda_out <= 1'b0;
+                sda_out <= 1'b1; // STOP condition
+                state <= IDLE;
+                busy <= 1'b0;
+            end
+        endcase
+    end
+end
+endmodule

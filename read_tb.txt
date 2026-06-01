@@ -1,0 +1,56 @@
+// Test bench:
+module i2c_mr_tb;
+reg clk, rst_n, start;
+reg [6:0] add;
+wire [7:0] data_out;
+wire scl;
+wire sda;
+wire busy;
+
+// pull-up resistor model for SDA
+pullup(sda);
+
+i2c_mr m1 (
+    .clk(clk),
+    .rst_n(rst_n),
+    .start(start),
+    .add(add),
+    .sda(sda),
+    .scl(scl),
+    .busy(busy),
+    .data_out(data_out)
+);
+
+// Behavioral mimicry of a slave sending read data (8'h5A -> 8'b01011010)
+// During the master's READ state (where master sda_oe = 0), slave drives the data.
+reg [7:0] slave_data = 8'h5A;
+integer i;
+
+assign sda = (m1.state == 4) ? slave_data[m1.bit_cnt] : 1'bz; 
+// Provides an ACK back to the master during ACK1 state
+assign sda = (m1.state == 3) ? 1'b0 : 1'bz;
+
+initial
+begin
+    clk = 0;
+    forever #5 clk = ~clk;
+end
+
+initial
+begin
+    rst_n = 0;
+    start = 0;
+    add = 7'h42;
+    #20 rst_n = 1;
+    #30 start = 1; // trigger transaction
+    #10 start = 0;
+    #500 $finish;
+end
+
+initial
+begin
+    $dumpfile("i2c_mr.vcd");
+    $dumpvars(0, i2c_mr_tb);
+end
+
+endmodule
